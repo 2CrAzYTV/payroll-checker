@@ -104,19 +104,42 @@ def classify_surcharge(label: str) -> tuple[str | None, float | None]:
     return None, stated_percent
 
 
-def parse_salary_items(text: str) -> list[dict[str, Any]]:
-    """Parse LA rows using the payroll table's numeric layout.
+def _extract_label(tail: str, amounts_raw: list[str]) -> str:
+    """Find the human label regardless of PDF text-column order.
 
-    Typical rows in this payroll are flattened like:
-      064 Nachtzuschlag ... 2,00 Std. 20,60 10,30 172,75
-      331 Geteilter Dienst ... 2,00 15,00 30,00 240,00
-      050 Monatsentgelt ... 2.794,14 21.712,74
-
-    Therefore four-value rows mean:
-      quantity, unit/basis value, current payroll amount, annual value.
-    Two-value rows mean:
-      current payroll amount, annual value.
+    Depending on the PDF extractor a row can arrive as either
+      Nachtzuschlag ... 2,00 20,60 10,30 172,75
+    or
+      2,00 20,60 10,30 172,75 Nachtzuschlag ...
+    We examine both sides and prefer the side that classifies as a surcharge.
     """
+    first_pos = tail.find(amounts_raw[0])
+    last_raw = amounts_raw[-1]
+    last_pos = tail.rfind(last_raw)
+    before = tail[:first_pos].strip() if first_pos >= 0 else ""
+    after = tail[last_pos + len(last_raw):].strip() if last_pos >= 0 else ""
+
+    before_cat, _ = classify_surcharge(before)
+    after_cat, _ = classify_surcharge(after)
+    if before_cat:
+        return before
+    if after_cat:
+        return after
+
+    # Prefer a side with meaningful alphabetic content. Ignore a bare unit token.
+    def useful(value: str) -> bool:
+        cleaned = re.sub(r"\b(?:Std\.?|Tage?)\b", "", value, flags=re.IGNORECASE).strip(" ()")
+        return bool(re.search(r"[A-Za-zÄÖÜäöüß]{3,}", cleaned))
+
+    if useful(before):
+        return before
+    if useful(after):
+        return after
+    return before or after
+
+
+def parse_salary_items(text: str) -> list[dict[str, Any]]:
+    """Parse LA rows while preserving quantity, unit value, month amount and annual value."""
     items: list[dict[str, Any]] = []
     for raw_line in text.splitlines():
         match = re.match(r"^\s*(\d{3})\s+(.+)$", raw_line)
@@ -130,8 +153,7 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
         if not amounts:
             continue
 
-        first_pos = tail.find(amounts_raw[0])
-        label = tail[:first_pos].strip() if first_pos >= 0 else tail.strip()
+        label = _extract_label(tail, amounts_raw)
         category, surcharge_percent = classify_surcharge(label)
 
         quantity = None
@@ -145,7 +167,6 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
             current_amount = amounts[-2]
             annual_value = amounts[-1]
         elif len(amounts) == 3:
-            # Prefer quantity × unit = current amount when mathematically plausible.
             if abs(money(amounts[0] * amounts[1]) - money(amounts[2])) <= 0.02:
                 quantity, unit_or_basis, current_amount = amounts
             else:
@@ -156,7 +177,6 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
         else:
             current_amount = amounts[0]
 
-        # Percentage surcharge rows use quantity × hourly basis × percentage.
         calculated_amount = None
         if quantity is not None and unit_or_basis is not None and surcharge_percent is not None:
             calculated_amount = money(quantity * unit_or_basis * surcharge_percent / 100.0)
