@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LohnCheck</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1220; --panel:#121b2e; --panel2:#18243c; --text:#eef4ff; --muted:#a8b3c7; --accent:#6aa9ff; --ok:#48c78e; --warn:#ffcb6b; --err:#ff6b7a; --line:#2a3854; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:linear-gradient(135deg,#09111d,#101a2d 45%,#0b1220); color:var(--text); }
+    .wrap { max-width:1180px; margin:0 auto; padding:28px 18px 48px; }
+    header { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin-bottom:22px; }
+    h1 { margin:0; font-size:clamp(30px,5vw,48px); letter-spacing:-.03em; }
+    .sub { color:var(--muted); margin-top:6px; max-width:760px; }
+    .badge { border:1px solid var(--line); background:#0d1728; color:var(--muted); border-radius:999px; padding:8px 12px; white-space:nowrap; }
+    .grid { display:grid; grid-template-columns:1.05fr .95fr; gap:18px; }
+    .card { background:rgba(18,27,46,.94); border:1px solid var(--line); border-radius:18px; padding:20px; box-shadow:0 16px 45px rgba(0,0,0,.18); }
+    .card h2 { margin:0 0 15px; font-size:20px; }
+    .fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    label { display:flex; flex-direction:column; gap:6px; color:var(--muted); font-size:13px; }
+    input { width:100%; border:1px solid var(--line); border-radius:10px; background:#0d1728; color:var(--text); padding:11px 12px; outline:none; }
+    input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(106,169,255,.12); }
+    .full { grid-column:1/-1; }
+    .section-title { grid-column:1/-1; margin:8px 0 -2px; color:#dce8ff; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+    button { border:0; border-radius:11px; padding:12px 15px; cursor:pointer; font-weight:700; }
+    .primary { background:var(--accent); color:#06111f; width:100%; margin-top:14px; }
+    .secondary { background:#213252; color:var(--text); }
+    .upload { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .upload input { flex:1; min-width:220px; }
+    .result-head { padding:14px 15px; border-radius:12px; background:#0d1728; border:1px solid var(--line); margin-bottom:14px; }
+    .result-head.ok { border-color:rgba(72,199,142,.5); }
+    .result-head.warning { border-color:rgba(255,203,107,.5); }
+    .result-head.error { border-color:rgba(255,107,122,.5); }
+    .row { display:grid; grid-template-columns:1.7fr .8fr .8fr .8fr; gap:10px; padding:11px 0; border-bottom:1px solid var(--line); align-items:center; }
+    .row:last-child { border-bottom:0; }
+    .row small { color:var(--muted); display:block; margin-top:4px; }
+    .state { font-weight:800; }
+    .ok .state,.state.ok { color:var(--ok); } .warning .state,.state.warning { color:var(--warn); } .error .state,.state.error { color:var(--err); }
+    .notice { background:#0d1728; border:1px solid var(--line); border-radius:12px; padding:13px; color:var(--muted); font-size:13px; line-height:1.5; }
+    .spacer { height:18px; }
+    .upload-result { margin-top:12px; white-space:pre-wrap; word-break:break-word; }
+    footer { margin-top:22px; color:var(--muted); font-size:12px; text-align:center; }
+    code { color:#dce8ff; }
+    @media (max-width:850px) { .grid { grid-template-columns:1fr; } .fields { grid-template-columns:1fr; } .full,.section-title { grid-column:auto; } .row { grid-template-columns:1fr 1fr; } header { flex-direction:column; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>LohnCheck</h1>
+      <div class="sub">Lokaler Plausibilitätsprüfer für deutsche Lohn- und Gehaltsabrechnungen. Keine Cloud-Übertragung der hochgeladenen PDFs.</div>
+    </div>
+    <div class="badge">Preview v{{ version }}</div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Abrechnung manuell prüfen</h2>
+      <form id="checkForm">
+        <div class="fields">
+          <label class="full">Abrechnungsmonat
+            <input id="payroll_month" placeholder="z. B. 08/2026">
+          </label>
+          <div class="section-title">Grundwerte</div>
+          <label>Gesamtbrutto (€)<input id="gross" type="number" step="0.01" value="0" required></label>
+          <label>SV-Brutto (€)<input id="sv_gross" type="number" step="0.01" placeholder="leer = Gesamtbrutto"></label>
+          <label>Netto laut Abrechnung (€)<input id="stated_net" type="number" step="0.01" value="0" required></label>
+          <label>Sonstige Netto-Zuschläge (€)<input id="other_net_additions" type="number" step="0.01" value="0"></label>
+
+          <div class="section-title">Steuern / Abzüge</div>
+          <label>Lohnsteuer (€)<input id="wage_tax" type="number" step="0.01" value="0"></label>
+          <label>Solidaritätszuschlag (€)<input id="solidarity_surcharge" type="number" step="0.01" value="0"></label>
+          <label>Kirchensteuer (€)<input id="church_tax" type="number" step="0.01" value="0"></label>
+          <label>Sonstige Abzüge (€)<input id="other_deductions" type="number" step="0.01" value="0"></label>
+
+          <div class="section-title">Arbeitnehmeranteile Sozialversicherung</div>
+          <label>Rentenversicherung (€)<input id="pension_employee" type="number" step="0.01" value="0"></label>
+          <label>Arbeitslosenversicherung (€)<input id="unemployment_employee" type="number" step="0.01" value="0"></label>
+          <label>Krankenversicherung (€)<input id="health_employee" type="number" step="0.01" value="0"></label>
+          <label>Pflegeversicherung (€)<input id="care_employee" type="number" step="0.01" value="0"></label>
+
+          <div class="section-title">Prüfparameter 2026</div>
+          <label>KV-Zusatzbeitrag gesamt (%)<input id="health_additional_rate" type="number" step="0.01" value="2.9"></label>
+          <label>PV Arbeitnehmeranteil (%)<input id="care_employee_rate" type="number" step="0.01" value="1.8"></label>
+          <label>Toleranz (€)<input id="tolerance" type="number" step="0.01" value="0.05"></label>
+        </div>
+        <button class="primary" type="submit">Abrechnung prüfen</button>
+      </form>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Prüfergebnis</h2>
+        <div id="emptyResult" class="notice">Noch keine Prüfung durchgeführt.</div>
+        <div id="result" style="display:none"></div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="card">
+        <h2>PDF lokal einlesen</h2>
+        <div class="upload">
+          <input id="pdfFile" type="file" accept="application/pdf,.pdf">
+          <button class="secondary" id="uploadBtn" type="button">PDF hochladen</button>
+        </div>
+        <div id="uploadResult" class="upload-result notice" style="display:none"></div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="card">
+        <h2>Aktueller Umfang</h2>
+        <div class="notice">Diese erste Version prüft die Netto-Rechenkette sowie ausgewählte Arbeitnehmeranteile der Sozialversicherung mit den 2026er Beitragsbemessungsgrenzen. Lohnsteuerberechnung nach BMF-PAP, Schichtzuschläge, Pflege-Kinderabschläge, Sachsen-Sonderregelung und automatische PDF-Feldzuordnung folgen in den nächsten Versionen.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Datenpfad im Container: <code>/data</code> · Healthcheck: <code>/health</code></footer>
+</div>
+
+<script>
+const money = v => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(Number(v||0));
+const num = id => Number(document.getElementById(id).value || 0);
+
+document.getElementById('checkForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const svRaw = document.getElementById('sv_gross').value.trim();
+  const payload = {
+    payroll_month: document.getElementById('payroll_month').value.trim(),
+    gross: num('gross'), sv_gross: svRaw === '' ? null : Number(svRaw), stated_net: num('stated_net'),
+    wage_tax: num('wage_tax'), solidarity_surcharge: num('solidarity_surcharge'), church_tax: num('church_tax'),
+    pension_employee: num('pension_employee'), unemployment_employee: num('unemployment_employee'),
+    health_employee: num('health_employee'), care_employee: num('care_employee'), other_deductions: num('other_deductions'),
+    other_net_additions: num('other_net_additions'), health_additional_rate: num('health_additional_rate'),
+    care_employee_rate: num('care_employee_rate'), tolerance: num('tolerance')
+  };
+
+  const r = await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if (!r.ok) { alert('Prüfung fehlgeschlagen: ' + await r.text()); return; }
+  const data = await r.json();
+  document.getElementById('emptyResult').style.display='none';
+  const el = document.getElementById('result'); el.style.display='block';
+  const icon = data.overall === 'ok' ? '✅' : data.overall === 'warning' ? '🟡' : '❌';
+  let rows = data.comparisons.map(x => `
+    <div class="row">
+      <div><strong>${x.name}</strong><small>${x.message}</small></div>
+      <div><small>Abrechnung</small>${money(x.stated)}</div>
+      <div><small>Berechnet</small>${money(x.expected)}</div>
+      <div class="state ${x.level}"><small>Differenz</small>${money(x.difference)}</div>
+    </div>`).join('');
+  el.innerHTML = `
+    <div class="result-head ${data.overall}"><div class="state">${icon} ${data.overall_text}</div><small>Netto berechnet: ${money(data.calculated_net)} · Differenz: ${money(data.net_difference)}</small></div>
+    ${rows}
+    <div class="notice" style="margin-top:14px">${data.notice}</div>`;
+});
+
+document.getElementById('uploadBtn').addEventListener('click', async () => {
+  const input = document.getElementById('pdfFile');
+  if (!input.files.length) { alert('Bitte zuerst eine PDF auswählen.'); return; }
+  const form = new FormData(); form.append('file', input.files[0]);
+  const box = document.getElementById('uploadResult'); box.style.display='block'; box.textContent='Upload läuft…';
+  const r = await fetch('/api/upload',{method:'POST',body:form});
+  const data = await r.json();
+  if (!r.ok) { box.textContent = data.detail || 'Upload fehlgeschlagen.'; return; }
+  box.textContent = `${data.message}\n\nDatei: ${data.original_name}\nErkannte Zeichen: ${data.extracted_chars}` + (data.text_sample ? `\n\nTextvorschau:\n${data.text_sample}` : '');
+});
+</script>
+</body>
+</html>
