@@ -57,30 +57,43 @@ def _add_surcharge_checks(result):
     for item in surcharge_items:
         category = item.get("category")
         tax_free_percent = item.get("tax_free_percent")
+        quantity = item.get("quantity")
+        amount = float(item.get("amount") or 0)
+        rate_or_basis = item.get("rate_or_basis")
+
+        detail_prefix = ""
+        if quantity is not None:
+            detail_prefix = f"Erkannt: {float(quantity):.2f} h"
+            if rate_or_basis is not None:
+                detail_prefix += f", Zwischenwert/Satz {float(rate_or_basis):.2f}"
+            detail_prefix += f", Auszahlungsbetrag {amount:.2f} €. "
+
         if category == "Überstunden/Mehrarbeit":
-            note = "Zuschlag erkannt. Die tarifliche Höhe benötigt Tarif-/Betriebsregel und Stundenbasis; § 3b EStG enthält hierfür keine allgemeine Steuerfreigrenze."
+            note = detail_prefix + "Die tarifliche Höhe benötigt Tarif-/Betriebsregel und Stundenbasis; § 3b EStG enthält hierfür keine allgemeine Steuerfreigrenze."
         elif category == "Nachtarbeit":
-            note = "Zuschlag erkannt. Steuerfrei nach § 3b EStG grundsätzlich bis 25 % des Grundlohns; 0–4 Uhr können bei vor Mitternacht begonnener Nachtarbeit bis 40 % gelten."
+            note = detail_prefix + "Steuerfrei nach § 3b EStG grundsätzlich bis 25 % des Grundlohns; 0–4 Uhr können bei vor Mitternacht begonnener Nachtarbeit bis 40 % gelten."
         elif category == "Sonntagsarbeit":
-            note = "Zuschlag erkannt. Steuerfrei nach § 3b EStG grundsätzlich bis 50 % des Grundlohns."
+            note = detail_prefix + "Steuerfrei nach § 3b EStG grundsätzlich bis 50 % des Grundlohns."
         elif category == "Feiertagsarbeit":
-            note = "Zuschlag erkannt. Steuerfrei nach § 3b EStG grundsätzlich bis 125 %; für bestimmte Feiertage bis 150 % des Grundlohns."
+            note = detail_prefix + "Steuerfrei nach § 3b EStG grundsätzlich bis 125 %; für bestimmte Feiertage bis 150 % des Grundlohns."
         else:
-            note = "Zuschlag erkannt; manuelle Zuordnung erforderlich."
+            note = detail_prefix + "Zuschlag erkannt; manuelle Zuordnung erforderlich."
 
         analysis.append({
             "code": item.get("code"),
             "label": item.get("label"),
             "category": category,
-            "amount": item.get("amount"),
+            "quantity": quantity,
+            "rate_or_basis": rate_or_basis,
+            "amount": amount,
             "tax_free_percent": tax_free_percent,
             "message": note,
         })
 
         row = main.compare(
             f"{category} – Lohnart {item.get('code')}",
-            float(item.get("amount") or 0),
-            float(item.get("amount") or 0),
+            amount,
+            amount,
             0.0,
         )
         row["message"] = note
@@ -151,13 +164,13 @@ def perform_check_with_bmf(data):
         "Tarifliche Zuschlagshöhen und Überstunden können nur vollständig geprüft werden, wenn Stunden, Grundlohn und die maßgebliche Tarif-/Betriebsregel eindeutig vorliegen."
     )
 
-    result["version"] = "0.4.0"
+    result["version"] = "0.4.1"
     return result
 
 
 main.perform_check = perform_check_with_bmf
-main.APP_VERSION = "0.4.0"
-main.app.version = "0.4.0"
+main.APP_VERSION = "0.4.1"
+main.app.version = "0.4.1"
 
 
 if __name__ == "__main__":
