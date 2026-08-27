@@ -187,13 +187,13 @@ def perform_check_with_bmf(data):
         "Prozentuale Zuschläge werden aus Menge × Basis × Zuschlagssatz neu berechnet."
     )
 
-    result["version"] = "0.4.3"
+    result["version"] = "0.4.4"
     return result
 
 
 main.perform_check = perform_check_with_bmf
-main.APP_VERSION = "0.4.3"
-main.app.version = "0.4.3"
+main.APP_VERSION = "0.4.4"
+main.app.version = "0.4.4"
 
 
 if __name__ == "__main__":
