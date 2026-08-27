@@ -1,15 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="LohnCheck">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2563eb"/>
-      <stop offset="1" stop-color="#0ea5e9"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071a3a"/>
+      <stop offset="1" stop-color="#0b2b67"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#0aa7ff"/>
+      <stop offset="1" stop-color="#1769ff"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#0b1220"/>
-  <rect x="92" y="70" width="328" height="372" rx="44" fill="url(#g)"/>
-  <rect x="132" y="118" width="248" height="276" rx="26" fill="#eef4ff"/>
-  <path d="M174 182h164M174 232h116M174 282h78" stroke="#17233a" stroke-width="24" stroke-linecap="round"/>
-  <path d="M232 342l42 42 76-92" fill="none" stroke="#16a34a" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="374" cy="110" r="54" fill="#0b1220"/>
-  <text x="374" y="130" text-anchor="middle" font-size="64" font-family="Arial,sans-serif" font-weight="700" fill="#eef4ff">€</text>
+  <rect x="8" y="8" width="496" height="496" rx="94" fill="url(#bg)" stroke="#1978ff" stroke-width="7"/>
+  <path d="M150 82h188l66 66v150H150z" fill="#f7f9ff"/>
+  <path d="M338 82v66h66z" fill="url(#blue)"/>
+  <text x="170" y="150" font-size="72" font-family="Arial,sans-serif" font-weight="700" fill="#071a3a">€</text>
+  <path d="M174 183h158M174 220h118M174 256h142" stroke="#12305c" stroke-width="14" stroke-linecap="round"/>
+  <path d="M120 268v132h78" fill="none" stroke="url(#blue)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M304 303h-62c-31 0-56 25-56 56v10c0 31 25 56 56 56h62" fill="none" stroke="#f7f9ff" stroke-width="38" stroke-linecap="round"/>
+  <path d="M248 354l45 45 101-123" fill="none" stroke="url(#blue)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
