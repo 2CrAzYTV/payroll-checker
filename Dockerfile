@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY app /app/app
 
 RUN python -m compileall -q /app/app \
+    && python -c "from app.bmf_tax import calculate_bmf_2026; r=calculate_bmf_2026(monthly_tax_gross=5000.00,tax_class=1,kv_additional_rate=2.5,childless_care_surcharge=True); assert r['wage_tax'] == 785.83, r" \
     && mkdir -p /data/documents
 
 EXPOSE 8788
