@@ -16,7 +16,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app /app/app
 
-RUN mkdir -p /data/documents
+RUN python -m compileall -q /app/app \
+    && mkdir -p /data/documents
 
 EXPOSE 8788
 
