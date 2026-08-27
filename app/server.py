@@ -166,6 +166,41 @@ def _add_wage_item_checks(result, data):
     result["wage_item_analysis"] = analysis
 
 
+def _add_gross_composition_checks(result, data):
+    comp = payroll_parser.LAST_GROSS_COMPOSITION.copy()
+    if not comp:
+        result["gross_composition"] = {}
+        return
+
+    gross_calc = comp.get("reconstructed_gross")
+    if gross_calc is not None:
+        row = main.compare("Gesamtbrutto aus erkannten Lohnarten", data.gross, float(gross_calc), data.tolerance)
+        row["message"] = "Summe der als Bruttobestandteile erkannten Lohnarten. Informationszeilen werden nicht mitgerechnet."
+        result["comparisons"].append(row)
+
+    tax_calc = comp.get("reconstructed_tax_gross")
+    if data.tax_gross is not None and tax_calc is not None:
+        excluded = comp.get("inferred_tax_excluded") or []
+        excluded_text = ", ".join(
+            f"{x.get('code')} {float(x.get('amount') or 0):.2f} €" for x in excluded
+        ) or "keine Position"
+        row = main.compare("Steuerbrutto aus Brutto-Differenz", data.tax_gross, float(tax_calc), data.tolerance)
+        row["message"] = (
+            f"Aus der konkreten Abrechnung hergeleitete Differenzpositionen: {excluded_text}. "
+            "Diese Zuordnung ist eine rechnerische Herleitung, keine allgemeine steuerrechtliche Einstufung der Lohnart."
+        )
+        result["comparisons"].append(row)
+
+    sv_calc = comp.get("reconstructed_sv_gross")
+    if data.sv_gross is not None and sv_calc is not None:
+        zvs = float(comp.get("zvs_sv_addition") or 0)
+        row = main.compare("SV-Brutto inkl. ZVS-Hinzurechnung", data.sv_gross, float(sv_calc), data.tolerance)
+        row["message"] = f"Steuerbrutto plus erkannte ZVS-Hinzurechnung von {zvs:.2f} €."
+        result["comparisons"].append(row)
+
+    result["gross_composition"] = comp
+
+
 def perform_check_with_bmf(data):
     result = _base_perform_check(data)
     ctx = payroll_parser.LAST_TAX_CONTEXT.copy()
@@ -174,6 +209,7 @@ def perform_check_with_bmf(data):
     _add_breakdown_checks(result, data, ctx, details)
     _add_surcharge_checks(result, data)
     _add_wage_item_checks(result, data)
+    _add_gross_composition_checks(result, data)
 
     if data.tax_gross is not None and data.tax_gross > 0:
         bmf = calculate_bmf_2026(
@@ -208,7 +244,7 @@ def perform_check_with_bmf(data):
         result["overall_text"] = "weitgehend plausibel, einzelne Punkte prüfen"
     else:
         result["overall"] = "ok"
-        result["overall_text"] = "inklusive BMF-PAP-2026- und Lohnartenprüfung plausibel"
+        result["overall_text"] = "inklusive BMF-PAP-2026-, Lohnarten- und Brutto-Prüfung plausibel"
 
     result["contribution_breakdown"] = {
         "health_base": details.get("health_base"),
@@ -223,17 +259,18 @@ def perform_check_with_bmf(data):
     result["notice"] = (
         "Lohnsteuer und Solidaritätszuschlag werden lokal nach dem BMF-Programmablaufplan 2026 neu berechnet. "
         "KV und PV werden in Grundbeitrag und Zusatz-/Kinderlosenzuschlag aufgeteilt. "
-        "Prozentuale Zuschläge werden aus Menge × Basis × Zuschlagssatz geprüft. "
-        "Erkannte Mengenlohnarten wie geteilter Dienst oder Mankogeld werden zusätzlich als Menge × Einzelwert neu berechnet."
+        "Zuschlags- und Mengenlohnarten werden mathematisch neu berechnet. "
+        "Zusätzlich wird die Zusammensetzung von Gesamtbrutto, Steuerbrutto und SV-Brutto aus den erkannten Abrechnungspositionen rechnerisch abgeglichen; "
+        "hergeleitete Steuerbrutto-Differenzpositionen werden ausdrücklich als solche gekennzeichnet."
     )
 
-    result["version"] = "0.5.0"
+    result["version"] = "0.6.0"
     return result
 
 
 main.perform_check = perform_check_with_bmf
-main.APP_VERSION = "0.5.0"
-main.app.version = "0.5.0"
+main.APP_VERSION = "0.6.0"
+main.app.version = "0.6.0"
 
 
 if __name__ == "__main__":
