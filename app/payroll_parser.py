@@ -81,20 +81,42 @@ def tax_context(text: str) -> dict[str, Any]:
     }
 
 
+def percent_from_label(label: str) -> float | None:
+    match = re.search(r"(\d+(?:[,.]\d+)?)\s*%", label)
+    if not match:
+        return None
+    return float(match.group(1).replace(",", "."))
+
+
 def classify_surcharge(label: str) -> tuple[str | None, float | None]:
     value = label.lower()
+    stated_percent = percent_from_label(label)
     if any(x in value for x in ("nacht", "night")):
-        return "Nachtarbeit", 25.0
+        return "Nachtarbeit", stated_percent if stated_percent is not None else 25.0
     if any(x in value for x in ("sonntag", "sonntags", "sonntagsarbeit")):
-        return "Sonntagsarbeit", 50.0
+        return "Sonntagsarbeit", stated_percent if stated_percent is not None else 50.0
     if any(x in value for x in ("feiertag", "feiertags")):
-        return "Feiertagsarbeit", 125.0
+        return "Feiertagsarbeit", stated_percent if stated_percent is not None else 125.0
+    if any(x in value for x in ("samstag", "samstags")):
+        return "Samstagsarbeit", stated_percent
     if any(x in value for x in ("überstund", "ueberstund", "mehrarbeit")):
-        return "Überstunden/Mehrarbeit", None
-    return None, None
+        return "Überstunden/Mehrarbeit", stated_percent
+    return None, stated_percent
 
 
 def parse_salary_items(text: str) -> list[dict[str, Any]]:
+    """Parse LA rows using the payroll table's numeric layout.
+
+    Typical rows in this payroll are flattened like:
+      064 Nachtzuschlag ... 2,00 Std. 20,60 10,30 172,75
+      331 Geteilter Dienst ... 2,00 15,00 30,00 240,00
+      050 Monatsentgelt ... 2.794,14 21.712,74
+
+    Therefore four-value rows mean:
+      quantity, unit/basis value, current payroll amount, annual value.
+    Two-value rows mean:
+      current payroll amount, annual value.
+    """
     items: list[dict[str, Any]] = []
     for raw_line in text.splitlines():
         match = re.match(r"^\s*(\d{3})\s+(.+)$", raw_line)
@@ -108,39 +130,51 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
         if not amounts:
             continue
 
-        last_amount_raw = amounts_raw[-1]
-        pos = tail.rfind(last_amount_raw)
-        label = tail[pos + len(last_amount_raw):].strip() if pos >= 0 else ""
-        if not label:
-            first_pos = tail.find(amounts_raw[0])
-            label = tail[:first_pos].strip() if first_pos >= 0 else ""
+        first_pos = tail.find(amounts_raw[0])
+        label = tail[:first_pos].strip() if first_pos >= 0 else tail.strip()
+        category, surcharge_percent = classify_surcharge(label)
 
-        category, tax_free_percent = classify_surcharge(label)
-
-        # Payroll tables often expose surcharge rows as e.g.:
-        #   2,00  10,30  20,60  Nachtarbeit
-        # The first numeric value is the quantity/hours, while the final value is the
-        # monetary amount. Older logic treated the first value as money and therefore
-        # displayed 2,00 € instead of 2,00 h / 20,60 €.
         quantity = None
-        rate_or_basis = None
-        if category and len(amounts) >= 2:
+        unit_or_basis = None
+        current_amount = None
+        annual_value = None
+
+        if len(amounts) >= 4:
             quantity = amounts[0]
-            payout_amount = amounts[-1]
-            if len(amounts) >= 3:
-                rate_or_basis = amounts[-2]
+            unit_or_basis = amounts[1]
+            current_amount = amounts[-2]
+            annual_value = amounts[-1]
+        elif len(amounts) == 3:
+            # Prefer quantity × unit = current amount when mathematically plausible.
+            if abs(money(amounts[0] * amounts[1]) - money(amounts[2])) <= 0.02:
+                quantity, unit_or_basis, current_amount = amounts
+            else:
+                current_amount = amounts[-2]
+                annual_value = amounts[-1]
+        elif len(amounts) == 2:
+            current_amount, annual_value = amounts
         else:
-            payout_amount = amounts[0]
+            current_amount = amounts[0]
+
+        # Percentage surcharge rows use quantity × hourly basis × percentage.
+        calculated_amount = None
+        if quantity is not None and unit_or_basis is not None and surcharge_percent is not None:
+            calculated_amount = money(quantity * unit_or_basis * surcharge_percent / 100.0)
 
         item = {
             "code": code,
             "label": label,
-            "amount": payout_amount,
+            "amount": current_amount,
+            "current_amount": current_amount,
+            "annual_value": annual_value,
             "quantity": quantity,
-            "rate_or_basis": rate_or_basis,
+            "unit_or_basis": unit_or_basis,
+            "rate_or_basis": unit_or_basis,
+            "calculated_amount": calculated_amount,
             "values": amounts,
             "category": category,
-            "tax_free_percent": tax_free_percent,
+            "surcharge_percent": surcharge_percent,
+            "tax_free_percent": surcharge_percent,
         }
         items.append(item)
     return items[:80]
