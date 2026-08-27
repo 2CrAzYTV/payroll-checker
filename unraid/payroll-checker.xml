@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Payroll-Checker</Name>
+  <Repository>ghcr.io/2crazytv/payroll-checker:latest</Repository>
+  <Registry>https://github.com/2CrAzYTV/payroll-checker/pkgs/container/payroll-checker</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/2CrAzYTV/payroll-checker/issues</Support>
+  <Project>https://github.com/2CrAzYTV/payroll-checker</Project>
+  <Overview>LohnCheck ist ein lokal betriebener Plausibilitaetspruefer fuer deutsche Lohn- und Gehaltsabrechnungen. Die Preview-Version prueft Netto-Rechenkette und ausgewaehlte Arbeitnehmeranteile der Sozialversicherung und kann PDF-Abrechnungen lokal speichern sowie deren Text-Layer auslesen. Keine Cloud-Verarbeitung. Ergebnisse ersetzen keine Steuer-, Rechts- oder Lohnberatung.</Overview>
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8788]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/2CrAzYTV/payroll-checker/main/unraid/payroll-checker.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/2CrAzYTV/payroll-checker/main/assets/icon.svg</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled></DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI Port" Target="8788" Default="8790" Mode="tcp" Description="Host-Port fuer die LohnCheck WebUI" Type="Port" Display="always" Required="true" Mask="false">8790</Config>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/payroll-checker" Mode="rw" Description="Persistente Datenbank und hochgeladene Abrechnungen" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/payroll-checker</Config>
+  <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Zeitzone des Containers" Type="Variable" Display="advanced" Required="true" Mask="false">Europe/Berlin</Config>
+  <Config Name="Data Directory" Target="APP_DATA_DIR" Default="/data" Mode="" Description="Interner persistenter Datenpfad" Type="Variable" Display="advanced" Required="true" Mask="false">/data</Config>
+</Container>
