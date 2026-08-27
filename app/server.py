@@ -77,14 +77,14 @@ def _add_surcharge_checks(result):
             "message": note,
         })
 
-        # Existing result UI renders comparisons. Use an informational row without claiming a tariff calculation.
         row = main.compare(
             f"{category} – Lohnart {item.get('code')}",
             float(item.get("amount") or 0),
             float(item.get("amount") or 0),
-            data.tolerance if False else 0.0,
+            0.0,
         )
         row["message"] = note
+        # Informational only: do not claim a tariff-specific amount was independently recalculated.
         row["level"] = "warning" if category == "Überstunden/Mehrarbeit" else "ok"
         result["comparisons"].append(row)
 
