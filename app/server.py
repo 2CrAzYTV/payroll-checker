@@ -86,12 +86,7 @@ def _add_surcharge_checks(result, data):
                 data.tolerance,
             )
         else:
-            if category == "Überstunden/Mehrarbeit":
-                note = detail_prefix + "Für die vollständige Prüfung fehlen Zuschlags-/Tarifparameter oder eine eindeutige Berechnungsbasis."
-            elif category == "Samstagsarbeit":
-                note = detail_prefix + "Samstagszuschlag erkannt; die tarifliche Berechnung wird geprüft, sobald Menge, Basis und Prozentsatz eindeutig vorliegen."
-            else:
-                note = detail_prefix + "Zuschlag erkannt; für eine vollständige Neuberechnung fehlen noch eindeutige Berechnungsparameter."
+            note = detail_prefix + "Für die vollständige Prüfung fehlen eindeutige Berechnungsparameter."
             row = main.compare(
                 f"{category} – Lohnart {item.get('code')}",
                 amount,
@@ -127,6 +122,50 @@ def _add_surcharge_checks(result, data):
     result["surcharge_analysis"] = analysis
 
 
+def _add_wage_item_checks(result, data):
+    wage_items = payroll_parser.LAST_WAGE_ITEMS
+    if not wage_items:
+        result["wage_item_analysis"] = []
+        return
+
+    analysis = []
+    for item in wage_items:
+        quantity = item.get("quantity")
+        unit = item.get("unit_or_basis")
+        amount = float(item.get("current_amount") or item.get("amount") or 0)
+        annual_value = item.get("annual_value")
+        calculated = item.get("calculated_amount")
+        if quantity is None or unit is None or calculated is None:
+            continue
+
+        note = (
+            f"Nachgerechnet: {float(quantity):.2f} × {float(unit):.2f} € = {float(calculated):.2f} €. "
+            f"Abgerechnet sind {amount:.2f} €."
+        )
+        row = main.compare(
+            f"Lohnart {item.get('code')} – {item.get('label') or 'Mengenlohnart'}",
+            amount,
+            float(calculated),
+            data.tolerance,
+        )
+        row["message"] = note
+        result["comparisons"].append(row)
+        analysis.append({
+            "code": item.get("code"),
+            "label": item.get("label"),
+            "quantity": quantity,
+            "unit_or_basis": unit,
+            "amount": amount,
+            "calculated_amount": calculated,
+            "annual_value": annual_value,
+            "message": note,
+            "level": row["level"],
+            "difference": row["difference"],
+        })
+
+    result["wage_item_analysis"] = analysis
+
+
 def perform_check_with_bmf(data):
     result = _base_perform_check(data)
     ctx = payroll_parser.LAST_TAX_CONTEXT.copy()
@@ -134,6 +173,7 @@ def perform_check_with_bmf(data):
 
     _add_breakdown_checks(result, data, ctx, details)
     _add_surcharge_checks(result, data)
+    _add_wage_item_checks(result, data)
 
     if data.tax_gross is not None and data.tax_gross > 0:
         bmf = calculate_bmf_2026(
@@ -168,7 +208,7 @@ def perform_check_with_bmf(data):
         result["overall_text"] = "weitgehend plausibel, einzelne Punkte prüfen"
     else:
         result["overall"] = "ok"
-        result["overall_text"] = "inklusive BMF-PAP-2026-Prüfung plausibel"
+        result["overall_text"] = "inklusive BMF-PAP-2026- und Lohnartenprüfung plausibel"
 
     result["contribution_breakdown"] = {
         "health_base": details.get("health_base"),
@@ -182,18 +222,18 @@ def perform_check_with_bmf(data):
     }
     result["notice"] = (
         "Lohnsteuer und Solidaritätszuschlag werden lokal nach dem BMF-Programmablaufplan 2026 neu berechnet. "
-        "KV und PV werden zusätzlich in Grundbeitrag und Zusatz-/Kinderlosenzuschlag aufgeteilt. "
-        "Lohnarten mit Menge, Basis/Einzelwert, Monatsbetrag und Jahreswert werden getrennt ausgewertet. "
-        "Prozentuale Zuschläge werden aus Menge × Basis × Zuschlagssatz neu berechnet."
+        "KV und PV werden in Grundbeitrag und Zusatz-/Kinderlosenzuschlag aufgeteilt. "
+        "Prozentuale Zuschläge werden aus Menge × Basis × Zuschlagssatz geprüft. "
+        "Erkannte Mengenlohnarten wie geteilter Dienst oder Mankogeld werden zusätzlich als Menge × Einzelwert neu berechnet."
     )
 
-    result["version"] = "0.4.4"
+    result["version"] = "0.5.0"
     return result
 
 
 main.perform_check = perform_check_with_bmf
-main.APP_VERSION = "0.4.4"
-main.app.version = "0.4.4"
+main.APP_VERSION = "0.5.0"
+main.app.version = "0.5.0"
 
 
 if __name__ == "__main__":
