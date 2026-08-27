@@ -13,7 +13,7 @@
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:8788]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/2CrAzYTV/payroll-checker/main/unraid/payroll-checker.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/2CrAzYTV/payroll-checker/main/assets/icon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/2CrAzYTV/payroll-checker/main/assets/icon.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>
