@@ -3,3 +3,4 @@ uvicorn[standard]==0.35.0
 jinja2==3.1.6
 python-multipart==0.0.20
 pypdf==6.0.0
+taxpy @ https://github.com/SimonArnu/taxpy/archive/787ce672d3390d119674a2db856f1bc333320de8.zip
