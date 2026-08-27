@@ -47,7 +47,7 @@ def _add_breakdown_checks(result, data, ctx, details):
         )
 
 
-def _add_surcharge_checks(result):
+def _add_surcharge_checks(result, data):
     surcharge_items = payroll_parser.LAST_SURCHARGE_ITEMS
     if not surcharge_items:
         result["surcharge_analysis"] = []
@@ -56,50 +56,74 @@ def _add_surcharge_checks(result):
     analysis = []
     for item in surcharge_items:
         category = item.get("category")
-        tax_free_percent = item.get("tax_free_percent")
+        percentage = item.get("surcharge_percent")
         quantity = item.get("quantity")
-        amount = float(item.get("amount") or 0)
-        rate_or_basis = item.get("rate_or_basis")
+        basis = item.get("unit_or_basis")
+        amount = float(item.get("current_amount") or item.get("amount") or 0)
+        annual_value = item.get("annual_value")
+        calculated_amount = item.get("calculated_amount")
 
-        detail_prefix = ""
+        parts = []
         if quantity is not None:
-            detail_prefix = f"Erkannt: {float(quantity):.2f} h"
-            if rate_or_basis is not None:
-                detail_prefix += f", Zwischenwert/Satz {float(rate_or_basis):.2f}"
-            detail_prefix += f", Auszahlungsbetrag {amount:.2f} €. "
+            parts.append(f"Menge {float(quantity):.2f}")
+        if basis is not None:
+            parts.append(f"Basis/Einzelwert {float(basis):.2f} €")
+        if percentage is not None:
+            parts.append(f"Zuschlag {float(percentage):g} %")
+        parts.append(f"Betrag laufender Monat {amount:.2f} €")
+        if annual_value is not None:
+            parts.append(f"Jahreswert {float(annual_value):.2f} €")
+        detail_prefix = "Erkannt: " + ", ".join(parts) + ". "
 
-        if category == "Überstunden/Mehrarbeit":
-            note = detail_prefix + "Die tarifliche Höhe benötigt Tarif-/Betriebsregel und Stundenbasis; § 3b EStG enthält hierfür keine allgemeine Steuerfreigrenze."
-        elif category == "Nachtarbeit":
-            note = detail_prefix + "Steuerfrei nach § 3b EStG grundsätzlich bis 25 % des Grundlohns; 0–4 Uhr können bei vor Mitternacht begonnener Nachtarbeit bis 40 % gelten."
-        elif category == "Sonntagsarbeit":
-            note = detail_prefix + "Steuerfrei nach § 3b EStG grundsätzlich bis 50 % des Grundlohns."
-        elif category == "Feiertagsarbeit":
-            note = detail_prefix + "Steuerfrei nach § 3b EStG grundsätzlich bis 125 %; für bestimmte Feiertage bis 150 % des Grundlohns."
+        if calculated_amount is not None:
+            note = detail_prefix + (
+                f"Nachgerechnet: {float(quantity):.2f} × {float(basis):.2f} € × "
+                f"{float(percentage):g} % = {float(calculated_amount):.2f} €."
+            )
+            row = main.compare(
+                f"{category} – Lohnart {item.get('code')}",
+                amount,
+                float(calculated_amount),
+                data.tolerance,
+            )
         else:
-            note = detail_prefix + "Zuschlag erkannt; manuelle Zuordnung erforderlich."
+            if category == "Überstunden/Mehrarbeit":
+                note = detail_prefix + "Für die vollständige Prüfung fehlen Zuschlags-/Tarifparameter oder eine eindeutige Berechnungsbasis."
+            elif category == "Samstagsarbeit":
+                note = detail_prefix + "Samstagszuschlag erkannt; die tarifliche Berechnung wird geprüft, sobald Menge, Basis und Prozentsatz eindeutig vorliegen."
+            else:
+                note = detail_prefix + "Zuschlag erkannt; für eine vollständige Neuberechnung fehlen noch eindeutige Berechnungsparameter."
+            row = main.compare(
+                f"{category} – Lohnart {item.get('code')}",
+                amount,
+                amount,
+                0.0,
+            )
+            row["level"] = "warning"
 
+        if category == "Nachtarbeit":
+            note += " Steuerlich ist Nachtarbeit nach § 3b EStG grundsätzlich bis 25 % des Grundlohns begünstigt; Sonderregeln für 0–4 Uhr bleiben separat zu prüfen."
+        elif category == "Sonntagsarbeit":
+            note += " Steuerlich gilt nach § 3b EStG grundsätzlich eine Grenze von 50 % des Grundlohns."
+        elif category == "Feiertagsarbeit":
+            note += " Steuerlich gelten nach § 3b EStG grundsätzlich 125 %, für bestimmte Feiertage 150 %."
+        elif category == "Samstagsarbeit":
+            note += " Für Samstagsarbeit gibt es keine allgemeine Steuerfreiheit nach § 3b EStG; maßgeblich ist hier insbesondere die tarifliche Regelung."
+
+        row["message"] = note
+        result["comparisons"].append(row)
         analysis.append({
             "code": item.get("code"),
             "label": item.get("label"),
             "category": category,
             "quantity": quantity,
-            "rate_or_basis": rate_or_basis,
+            "unit_or_basis": basis,
+            "surcharge_percent": percentage,
             "amount": amount,
-            "tax_free_percent": tax_free_percent,
+            "calculated_amount": calculated_amount,
+            "annual_value": annual_value,
             "message": note,
         })
-
-        row = main.compare(
-            f"{category} – Lohnart {item.get('code')}",
-            amount,
-            amount,
-            0.0,
-        )
-        row["message"] = note
-        # Informational only: do not claim a tariff-specific amount was independently recalculated.
-        row["level"] = "warning" if category == "Überstunden/Mehrarbeit" else "ok"
-        result["comparisons"].append(row)
 
     result["surcharge_analysis"] = analysis
 
@@ -110,7 +134,7 @@ def perform_check_with_bmf(data):
     details = payroll_parser.LAST_PAYROLL_DETAILS.copy()
 
     _add_breakdown_checks(result, data, ctx, details)
-    _add_surcharge_checks(result)
+    _add_surcharge_checks(result, data)
 
     if data.tax_gross is not None and data.tax_gross > 0:
         bmf = calculate_bmf_2026(
@@ -160,17 +184,17 @@ def perform_check_with_bmf(data):
     result["notice"] = (
         "Lohnsteuer und Solidaritätszuschlag werden lokal nach dem BMF-Programmablaufplan 2026 neu berechnet. "
         "KV und PV werden zusätzlich in Grundbeitrag und Zusatz-/Kinderlosenzuschlag aufgeteilt. "
-        "Nacht-, Sonn- und Feiertagszuschläge werden erkannt und gegen die gesetzlichen Steuerfreiheitsgrenzen nach § 3b EStG eingeordnet. "
-        "Tarifliche Zuschlagshöhen und Überstunden können nur vollständig geprüft werden, wenn Stunden, Grundlohn und die maßgebliche Tarif-/Betriebsregel eindeutig vorliegen."
+        "Lohnarten mit Menge, Basis/Einzelwert, Monatsbetrag und Jahreswert werden getrennt ausgewertet. "
+        "Prozentuale Zuschläge werden aus Menge × Basis × Zuschlagssatz neu berechnet."
     )
 
-    result["version"] = "0.4.1"
+    result["version"] = "0.4.2"
     return result
 
 
 main.perform_check = perform_check_with_bmf
-main.APP_VERSION = "0.4.1"
-main.app.version = "0.4.1"
+main.APP_VERSION = "0.4.2"
+main.app.version = "0.4.2"
 
 
 if __name__ == "__main__":
