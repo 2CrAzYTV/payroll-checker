@@ -5,7 +5,6 @@ import uvicorn
 from app import main, payroll_parser
 from app.bmf_tax import calculate_bmf_2026
 
-# Runtime extensions for the current parser/tax engine while keeping the existing API/database stable.
 main.parse_payroll_text = payroll_parser.parse_payroll_text
 _base_perform_check = main.perform_check
 
@@ -188,13 +187,13 @@ def perform_check_with_bmf(data):
         "Prozentuale Zuschläge werden aus Menge × Basis × Zuschlagssatz neu berechnet."
     )
 
-    result["version"] = "0.4.2"
+    result["version"] = "0.4.3"
     return result
 
 
 main.perform_check = perform_check_with_bmf
-main.APP_VERSION = "0.4.2"
-main.app.version = "0.4.2"
+main.APP_VERSION = "0.4.3"
+main.app.version = "0.4.3"
 
 
 if __name__ == "__main__":
