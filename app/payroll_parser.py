@@ -116,10 +116,28 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
             label = tail[:first_pos].strip() if first_pos >= 0 else ""
 
         category, tax_free_percent = classify_surcharge(label)
+
+        # Payroll tables often expose surcharge rows as e.g.:
+        #   2,00  10,30  20,60  Nachtarbeit
+        # The first numeric value is the quantity/hours, while the final value is the
+        # monetary amount. Older logic treated the first value as money and therefore
+        # displayed 2,00 € instead of 2,00 h / 20,60 €.
+        quantity = None
+        rate_or_basis = None
+        if category and len(amounts) >= 2:
+            quantity = amounts[0]
+            payout_amount = amounts[-1]
+            if len(amounts) >= 3:
+                rate_or_basis = amounts[-2]
+        else:
+            payout_amount = amounts[0]
+
         item = {
             "code": code,
             "label": label,
-            "amount": amounts[0],
+            "amount": payout_amount,
+            "quantity": quantity,
+            "rate_or_basis": rate_or_basis,
             "values": amounts,
             "category": category,
             "tax_free_percent": tax_free_percent,
