@@ -39,20 +39,20 @@
     .state { font-weight:800; }
     .ok .state,.state.ok { color:var(--ok); } .warning .state,.state.warning { color:var(--warn); } .error .state,.state.error { color:var(--err); }
     .notice { background:#0d1728; border:1px solid var(--line); border-radius:12px; padding:13px; color:var(--muted); font-size:13px; line-height:1.5; }
-    .surcharge-list { display:grid; gap:10px; }
-    .surcharge-item { background:#0d1728; border:1px solid var(--line); border-radius:12px; padding:12px; }
-    .surcharge-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:8px; }
-    .surcharge-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; font-size:12px; }
-    .surcharge-meta > div { background:#111d31; border-radius:8px; padding:8px; }
-    .surcharge-meta small { color:var(--muted); display:block; margin-bottom:3px; }
-    .surcharge-calc { margin-top:8px; color:var(--muted); font-size:12px; line-height:1.45; }
+    .item-list { display:grid; gap:10px; }
+    .item-card { background:#0d1728; border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .item-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:8px; }
+    .item-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; font-size:12px; }
+    .item-meta > div { background:#111d31; border-radius:8px; padding:8px; }
+    .item-meta small { color:var(--muted); display:block; margin-bottom:3px; }
+    .item-calc { margin-top:8px; color:var(--muted); font-size:12px; line-height:1.45; }
     .spacer { height:18px; }
     .upload-result { margin-top:12px; white-space:pre-wrap; word-break:break-word; }
     .detected { margin-top:12px; display:grid; gap:8px; }
     .detected-item { display:flex; justify-content:space-between; gap:14px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:#0d1728; }
     footer { margin-top:22px; color:var(--muted); font-size:12px; text-align:center; }
     code { color:#dce8ff; }
-    @media (max-width:850px) { .grid { grid-template-columns:1fr; } .fields { grid-template-columns:1fr; } .full,.section-title { grid-column:auto; } .row { grid-template-columns:1fr 1fr; } .surcharge-meta { grid-template-columns:1fr 1fr; } header { flex-direction:column; } }
+    @media (max-width:850px) { .grid { grid-template-columns:1fr; } .fields { grid-template-columns:1fr; } .full,.section-title { grid-column:auto; } .row { grid-template-columns:1fr 1fr; } .item-meta { grid-template-columns:1fr 1fr; } header { flex-direction:column; } }
   </style>
 </head>
 <body>
@@ -116,7 +116,7 @@
       <div class="spacer"></div>
       <div class="card">
         <h2>Aktueller Umfang</h2>
-        <div class="notice">LohnCheck liest zentrale Felder aus textbasierten deutschen Lohnabrechnungen, prüft Sozialversicherung, Auszahlungskette sowie Lohnsteuer/Soli nach BMF-PAP 2026 und wertet erkannte Zuschlagslohnarten mit Menge, Basis, Prozentsatz, Monatsbetrag und Jahreswert getrennt aus.</div>
+        <div class="notice">LohnCheck liest zentrale Felder aus textbasierten deutschen Lohnabrechnungen, prüft Sozialversicherung, Auszahlungskette sowie Lohnsteuer/Soli nach BMF-PAP 2026, berechnet Zuschlagslohnarten und prüft zusätzlich erkannte Mengenlohnarten wie geteilten Dienst oder Mankogeld aus Menge × Einzelwert.</div>
       </div>
     </div>
   </div>
@@ -144,9 +144,19 @@ function renderSurcharges(items){
     const ok=x.calculated_amount!==null&&x.calculated_amount!==undefined&&Math.abs(Number(x.amount)-Number(x.calculated_amount))<=0.05;
     const status=ok?'<span class="state ok">✅ korrekt</span>':'<span class="state warning">🟡 prüfen</span>';
     const calc=x.calculated_amount!==null&&x.calculated_amount!==undefined?`Nachgerechnet: ${deNum(x.quantity)} × ${money(x.unit_or_basis)} × ${Number(x.surcharge_percent).toLocaleString('de-DE')} % = <strong>${money(x.calculated_amount)}</strong>`:x.message;
-    return `<div class="surcharge-item"><div class="surcharge-head"><div><strong>${x.category}</strong><small style="display:block;color:var(--muted)">Lohnart ${x.code}${x.label?' · '+x.label:''}</small></div>${status}</div><div class="surcharge-meta"><div><small>Menge</small><strong>${x.quantity!==null&&x.quantity!==undefined?deNum(x.quantity)+' Std.':'–'}</strong></div><div><small>Basis / Einzelwert</small><strong>${x.unit_or_basis!==null&&x.unit_or_basis!==undefined?money(x.unit_or_basis):'–'}</strong></div><div><small>Monatsbetrag</small><strong>${money(x.amount)}</strong></div><div><small>Jahreswert</small><strong>${x.annual_value!==null&&x.annual_value!==undefined?money(x.annual_value):'–'}</strong></div></div><div class="surcharge-calc">${calc}</div></div>`;
+    return `<div class="item-card"><div class="item-head"><div><strong>${x.category}</strong><small style="display:block;color:var(--muted)">Lohnart ${x.code}${x.label?' · '+x.label:''}</small></div>${status}</div><div class="item-meta"><div><small>Menge</small><strong>${x.quantity!==null&&x.quantity!==undefined?deNum(x.quantity)+' Std.':'–'}</strong></div><div><small>Basis / Einzelwert</small><strong>${x.unit_or_basis!==null&&x.unit_or_basis!==undefined?money(x.unit_or_basis):'–'}</strong></div><div><small>Monatsbetrag</small><strong>${money(x.amount)}</strong></div><div><small>Jahreswert</small><strong>${x.annual_value!==null&&x.annual_value!==undefined?money(x.annual_value):'–'}</strong></div></div><div class="item-calc">${calc}</div></div>`;
   }).join('');
-  return `<div class="result-section"><div class="result-section-title">Zuschläge / Lohnarten</div><div class="surcharge-list">${cards}</div></div>`;
+  return `<div class="result-section"><div class="result-section-title">Zuschläge / Lohnarten</div><div class="item-list">${cards}</div></div>`;
+}
+function renderWageItems(items){
+  if(!items||!items.length)return '';
+  const cards=items.map(x=>{
+    const ok=x.level==='ok';
+    const status=ok?'<span class="state ok">✅ korrekt</span>':x.level==='error'?'<span class="state error">❌ Abweichung</span>':'<span class="state warning">🟡 prüfen</span>';
+    const calc=`Nachgerechnet: ${deNum(x.quantity)} × ${money(x.unit_or_basis)} = <strong>${money(x.calculated_amount)}</strong> · Abgerechnet: <strong>${money(x.amount)}</strong>`;
+    return `<div class="item-card"><div class="item-head"><div><strong>${x.label||'Mengenlohnart'}</strong><small style="display:block;color:var(--muted)">Lohnart ${x.code}</small></div>${status}</div><div class="item-meta"><div><small>Menge / Stück</small><strong>${deNum(x.quantity)}</strong></div><div><small>Einzelwert</small><strong>${money(x.unit_or_basis)}</strong></div><div><small>Monatsbetrag</small><strong>${money(x.amount)}</strong></div><div><small>Jahreswert</small><strong>${x.annual_value!==null&&x.annual_value!==undefined?money(x.annual_value):'–'}</strong></div></div><div class="item-calc">${calc}</div></div>`;
+  }).join('');
+  return `<div class="result-section"><div class="result-section-title">Weitere geprüfte Lohnarten</div><div class="item-list">${cards}</div></div>`;
 }
 
 document.getElementById('checkForm').addEventListener('submit',async(e)=>{
@@ -156,9 +166,10 @@ document.getElementById('checkForm').addEventListener('submit',async(e)=>{
   const data=await r.json(); document.getElementById('emptyResult').style.display='none'; const el=document.getElementById('result'); el.style.display='block';
   const icon=data.overall==='ok'?'✅':data.overall==='warning'?'🟡':'❌';
   const surchargeNames=new Set((data.surcharge_analysis||[]).map(x=>`${x.category} – Lohnart ${x.code}`));
-  const normalRows=(data.comparisons||[]).filter(x=>!surchargeNames.has(x.name)).map(renderComparison).join('');
+  const wageNames=new Set((data.wage_item_analysis||[]).map(x=>`Lohnart ${x.code} – ${x.label||'Mengenlohnart'}`));
+  const normalRows=(data.comparisons||[]).filter(x=>!surchargeNames.has(x.name)&&!wageNames.has(x.name)).map(renderComparison).join('');
   const payoutInfo=data.calculated_payout!==null?`<small>Auszahlung berechnet: ${money(data.calculated_payout)}</small>`:'';
-  el.innerHTML=`<div class="result-head ${data.overall}"><div class="state">${icon} ${data.overall_text}</div>${payoutInfo}</div>${normalRows}${renderSurcharges(data.surcharge_analysis)}<div class="notice" style="margin-top:14px">${data.notice}</div>`;
+  el.innerHTML=`<div class="result-head ${data.overall}"><div class="state">${icon} ${data.overall_text}</div>${payoutInfo}</div>${normalRows}${renderSurcharges(data.surcharge_analysis)}${renderWageItems(data.wage_item_analysis)}<div class="notice" style="margin-top:14px">${data.notice}</div>`;
 });
 
 document.getElementById('uploadBtn').addEventListener('click',async()=>{
