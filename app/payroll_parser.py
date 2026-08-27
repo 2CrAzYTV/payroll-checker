@@ -10,6 +10,8 @@ LAST_TAX_CONTEXT: dict[str, Any] = {
     "church_tax_rate": 0.0,
     "saxony": False,
 }
+LAST_PAYROLL_DETAILS: dict[str, Any] = {}
+LAST_SURCHARGE_ITEMS: list[dict[str, Any]] = []
 
 
 def money(value: float) -> float:
@@ -69,16 +71,27 @@ def tax_context(text: str) -> dict[str, Any]:
 
     childless = bool(re.search(r"PV-Kinderlosenzuschlag\s*:\s*Ja", text, re.IGNORECASE))
     not_church = bool(re.search(r"nicht\s+kirchensteuerpflichtig", text, re.IGNORECASE))
-    # The parser currently defaults to Niedersachsen/non-Saxony when no explicit state is present.
-    # Church tax is 0 for ELStAM 'nicht kirchensteuerpflichtig'.
-    context = {
+    saxony = bool(re.search(r"\bSachsen\b", text, re.IGNORECASE))
+    return {
         "tax_class": tax_class,
         "child_allowance": child_allowance,
         "childless_care_surcharge": childless,
         "church_tax_rate": 0.0 if not_church else 9.0,
-        "saxony": False,
+        "saxony": saxony,
     }
-    return context
+
+
+def classify_surcharge(label: str) -> tuple[str | None, float | None]:
+    value = label.lower()
+    if any(x in value for x in ("nacht", "night")):
+        return "Nachtarbeit", 25.0
+    if any(x in value for x in ("sonntag", "sonntags", "sonntagsarbeit")):
+        return "Sonntagsarbeit", 50.0
+    if any(x in value for x in ("feiertag", "feiertags")):
+        return "Feiertagsarbeit", 125.0
+    if any(x in value for x in ("überstund", "ueberstund", "mehrarbeit")):
+        return "Überstunden/Mehrarbeit", None
+    return None, None
 
 
 def parse_salary_items(text: str) -> list[dict[str, Any]]:
@@ -88,23 +101,35 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
         if not match:
             continue
         code, tail = match.groups()
-        amounts = AMOUNT_RE.findall(tail)
+        amounts_raw = AMOUNT_RE.findall(tail)
+        if not amounts_raw:
+            continue
+        amounts = [x for x in (parse_de_number(v) for v in amounts_raw) if x is not None]
         if not amounts:
             continue
-        last_amount = amounts[-1]
-        pos = tail.rfind(last_amount)
-        label = tail[pos + len(last_amount):].strip() if pos >= 0 else ""
+
+        last_amount_raw = amounts_raw[-1]
+        pos = tail.rfind(last_amount_raw)
+        label = tail[pos + len(last_amount_raw):].strip() if pos >= 0 else ""
         if not label:
-            first_pos = tail.find(amounts[0])
+            first_pos = tail.find(amounts_raw[0])
             label = tail[:first_pos].strip() if first_pos >= 0 else ""
-        current = parse_de_number(amounts[0])
-        if current is not None:
-            items.append({"code": code, "label": label, "amount": current})
-    return items[:50]
+
+        category, tax_free_percent = classify_surcharge(label)
+        item = {
+            "code": code,
+            "label": label,
+            "amount": amounts[0],
+            "values": amounts,
+            "category": category,
+            "tax_free_percent": tax_free_percent,
+        }
+        items.append(item)
+    return items[:80]
 
 
 def parse_payroll_text(text: str) -> dict[str, Any]:
-    global LAST_TAX_CONTEXT
+    global LAST_TAX_CONTEXT, LAST_PAYROLL_DETAILS, LAST_SURCHARGE_ITEMS
     LAST_TAX_CONTEXT = tax_context(text)
 
     gross = amount_for_code(text, "BRG")
@@ -148,16 +173,28 @@ def parse_payroll_text(text: str) -> dict[str, Any]:
     if inferred_care_rate is not None:
         fields["care_employee_rate"] = inferred_care_rate
 
+    salary_items = parse_salary_items(text)
+    LAST_SURCHARGE_ITEMS = [i for i in salary_items if i.get("category")]
+    LAST_PAYROLL_DETAILS = {
+        "kv_gross": kv_gross,
+        "rv_gross": rv_gross,
+        "health_base": health_base,
+        "health_additional": health_additional,
+        "inferred_health_additional_rate": inferred_health_additional_rate,
+        "care_base": care_base,
+        "care_childless": care_childless,
+        "inferred_care_rate": inferred_care_rate,
+        "supplementary_pension": supplementary,
+        "gwv_deduction": gwv,
+        "payout_correction": payout_correction,
+    }
+
     detected = sum(1 for value in fields.values() if value not in (None, "", 0.0))
     return {
         "fields": fields,
-        "salary_items": parse_salary_items(text),
+        "salary_items": salary_items,
+        "surcharge_items": LAST_SURCHARGE_ITEMS,
         "tax_context": LAST_TAX_CONTEXT.copy(),
-        "details": {
-            "kv_gross": kv_gross, "rv_gross": rv_gross, "health_base": health_base,
-            "health_additional": health_additional, "care_base": care_base,
-            "care_childless": care_childless, "supplementary_pension": supplementary,
-            "gwv_deduction": gwv, "payout_correction": payout_correction,
-        },
+        "details": LAST_PAYROLL_DETAILS.copy(),
         "detected_fields": detected,
     }
