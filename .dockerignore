@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+README.md
+unraid
+*.sqlite3
+data
+documents
+__pycache__
+*.pyc
