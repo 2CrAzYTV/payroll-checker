@@ -46,6 +46,10 @@
     .item-meta > div { background:#111d31; border-radius:8px; padding:8px; }
     .item-meta small { color:var(--muted); display:block; margin-bottom:3px; }
     .item-calc { margin-top:8px; color:var(--muted); font-size:12px; line-height:1.45; }
+    .composition-steps { display:grid; gap:8px; }
+    .composition-step { background:#0d1728; border:1px solid var(--line); border-radius:10px; padding:10px; font-size:12px; line-height:1.45; }
+    .composition-components { margin-top:10px; display:grid; gap:6px; }
+    .composition-component { display:flex; justify-content:space-between; gap:10px; padding:7px 9px; background:#111d31; border-radius:8px; font-size:12px; }
     .spacer { height:18px; }
     .upload-result { margin-top:12px; white-space:pre-wrap; word-break:break-word; }
     .detected { margin-top:12px; display:grid; gap:8px; }
@@ -116,7 +120,7 @@
       <div class="spacer"></div>
       <div class="card">
         <h2>Aktueller Umfang</h2>
-        <div class="notice">LohnCheck liest zentrale Felder aus textbasierten deutschen Lohnabrechnungen, prüft Sozialversicherung, Auszahlungskette sowie Lohnsteuer/Soli nach BMF-PAP 2026, berechnet Zuschlagslohnarten und prüft zusätzlich erkannte Mengenlohnarten wie geteilten Dienst oder Mankogeld aus Menge × Einzelwert.</div>
+        <div class="notice">LohnCheck liest zentrale Felder aus textbasierten deutschen Lohnabrechnungen, prüft Sozialversicherung, Auszahlungskette sowie Lohnsteuer/Soli nach BMF-PAP 2026, berechnet Zuschlags- und Mengenlohnarten und gleicht zusätzlich die Zusammensetzung von Gesamtbrutto, Steuerbrutto und SV-Brutto aus den erkannten Abrechnungspositionen ab.</div>
       </div>
     </div>
   </div>
@@ -158,6 +162,19 @@ function renderWageItems(items){
   }).join('');
   return `<div class="result-section"><div class="result-section-title">Weitere geprüfte Lohnarten</div><div class="item-list">${cards}</div></div>`;
 }
+function renderGrossComposition(comp){
+  if(!comp||!comp.components||!comp.components.length)return '';
+  const grossOk=Math.abs(Number(comp.gross_difference||0))<=0.05;
+  const taxOk=comp.tax_difference!==null&&comp.tax_difference!==undefined&&Math.abs(Number(comp.tax_difference||0))<=0.05;
+  const svOk=comp.sv_difference!==null&&comp.sv_difference!==undefined&&Math.abs(Number(comp.sv_difference||0))<=0.05;
+  const componentRows=comp.components.map(x=>`<div class="composition-component"><span>Lohnart ${x.code} · ${x.gross_component_type||x.label||'Lohnbestandteil'}${x.tax_excluded_inferred?' · aus Steuerbrutto-Differenz hergeleitet':''}</span><strong>${money(x.current_amount)}</strong></div>`).join('');
+  const excluded=(comp.inferred_tax_excluded||[]).map(x=>`${x.code} ${money(x.amount)}`).join(' + ')||'keine eindeutige Kombination';
+  return `<div class="result-section"><div class="result-section-title">Brutto-Zusammensetzung</div><div class="composition-steps">
+    <div class="composition-step"><strong>${grossOk?'✅':'❌'} Gesamtbrutto</strong><br>Erkannte Lohnarten zusammen: <strong>${money(comp.reconstructed_gross)}</strong> · Differenz: ${money(comp.gross_difference)}</div>
+    <div class="composition-step"><strong>${taxOk?'✅':'🟡'} Steuerbrutto</strong><br>Differenz Gesamtbrutto → Steuerbrutto: <strong>${money(comp.tax_delta)}</strong>. Rechnerisch passende Positionen: ${excluded}. Ergebnis: <strong>${comp.reconstructed_tax_gross!==null&&comp.reconstructed_tax_gross!==undefined?money(comp.reconstructed_tax_gross):'nicht eindeutig'}</strong>.</div>
+    <div class="composition-step"><strong>${svOk?'✅':'🟡'} SV-Brutto</strong><br>Steuerbrutto + ZVS-Hinzurechnung ${money(comp.zvs_sv_addition)} = <strong>${comp.reconstructed_sv_gross!==null&&comp.reconstructed_sv_gross!==undefined?money(comp.reconstructed_sv_gross):'nicht berechenbar'}</strong>.</div>
+  </div><div class="composition-components">${componentRows}</div><div class="notice" style="margin-top:10px">${comp.inference_note||''}</div></div>`;
+}
 
 document.getElementById('checkForm').addEventListener('submit',async(e)=>{
   e.preventDefault();
@@ -167,9 +184,10 @@ document.getElementById('checkForm').addEventListener('submit',async(e)=>{
   const icon=data.overall==='ok'?'✅':data.overall==='warning'?'🟡':'❌';
   const surchargeNames=new Set((data.surcharge_analysis||[]).map(x=>`${x.category} – Lohnart ${x.code}`));
   const wageNames=new Set((data.wage_item_analysis||[]).map(x=>`Lohnart ${x.code} – ${x.label||'Mengenlohnart'}`));
-  const normalRows=(data.comparisons||[]).filter(x=>!surchargeNames.has(x.name)&&!wageNames.has(x.name)).map(renderComparison).join('');
+  const compositionNames=new Set(['Gesamtbrutto aus erkannten Lohnarten','Steuerbrutto aus Brutto-Differenz','SV-Brutto inkl. ZVS-Hinzurechnung']);
+  const normalRows=(data.comparisons||[]).filter(x=>!surchargeNames.has(x.name)&&!wageNames.has(x.name)&&!compositionNames.has(x.name)).map(renderComparison).join('');
   const payoutInfo=data.calculated_payout!==null?`<small>Auszahlung berechnet: ${money(data.calculated_payout)}</small>`:'';
-  el.innerHTML=`<div class="result-head ${data.overall}"><div class="state">${icon} ${data.overall_text}</div>${payoutInfo}</div>${normalRows}${renderSurcharges(data.surcharge_analysis)}${renderWageItems(data.wage_item_analysis)}<div class="notice" style="margin-top:14px">${data.notice}</div>`;
+  el.innerHTML=`<div class="result-head ${data.overall}"><div class="state">${icon} ${data.overall_text}</div>${payoutInfo}</div>${normalRows}${renderSurcharges(data.surcharge_analysis)}${renderWageItems(data.wage_item_analysis)}${renderGrossComposition(data.gross_composition)}<div class="notice" style="margin-top:14px">${data.notice}</div>`;
 });
 
 document.getElementById('uploadBtn').addEventListener('click',async()=>{
