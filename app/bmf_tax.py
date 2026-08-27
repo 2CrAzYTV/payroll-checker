@@ -26,14 +26,20 @@ def calculate_bmf_2026(
 
     RE4 is supplied in cents for a monthly pay period (LZZ=2). The calculation
     stays local in the container; no BMF web service is called at runtime.
+
+    The current taxpy 2026 Python port initializes a few integer PAP inputs as
+    Big instances. Set them explicitly here so comparisons in the generated PAP
+    code keep the same semantics as the original BMF pseudocode.
     """
     if tax_class not in {1, 2, 3, 4, 5, 6}:
         raise ValueError("Steuerklasse muss zwischen 1 und 6 liegen")
+    if monthly_tax_gross < 0:
+        raise ValueError("Steuerbrutto darf nicht negativ sein")
 
     tax = Lohnsteuer2026Big()
     tax.LZZ = 2
-    tax.RE4 = Big(round(monthly_tax_gross * 100))
-    tax.STKL = tax_class
+    tax.RE4 = Big(str(round(monthly_tax_gross * 100, 0)))
+    tax.STKL = int(tax_class)
     tax.KVZ = Big(str(kv_additional_rate))
     tax.ZKF = Big(str(child_allowance))
     tax.PVZ = 1 if childless_care_surcharge else 0
@@ -41,6 +47,13 @@ def calculate_bmf_2026(
     tax.PKV = 0
     tax.KRV = 0
     tax.ALV = 0
+
+    # Work around type bugs in the generated Python port. These are integer
+    # switches/years in the BMF PAP, not monetary BigDecimal values.
+    tax.R = 0
+    tax.VJAHR = 0
+    tax.AJAHR = 0
+
     tax.calculate()
 
     wage_tax = _eur_from_cent(tax.LSTLZZ)
