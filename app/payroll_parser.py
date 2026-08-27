@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import re
 from typing import Any
 
@@ -13,6 +14,7 @@ LAST_TAX_CONTEXT: dict[str, Any] = {
 LAST_PAYROLL_DETAILS: dict[str, Any] = {}
 LAST_SURCHARGE_ITEMS: list[dict[str, Any]] = []
 LAST_WAGE_ITEMS: list[dict[str, Any]] = []
+LAST_GROSS_COMPOSITION: dict[str, Any] = {}
 
 
 def money(value: float) -> float:
@@ -115,6 +117,31 @@ def classify_quantity_wage_item(code: str, label: str) -> str | None:
     return None
 
 
+def classify_gross_component(code: str, label: str) -> str | None:
+    """Classify known payroll rows that contribute to the displayed gross reconciliation.
+
+    This is intentionally conservative: only rows with semantics known from the source
+    payroll are included. Informational rows such as insolvency insurance are excluded.
+    """
+    value = label.lower()
+    if "info" in value:
+        return None
+    known = {
+        "050": "Monatsentgelt",
+        "064": "Nachtzuschlag",
+        "067": "Samstagszuschlag",
+        "331": "Geteilter Dienst BV",
+        "332": "Mankogeld",
+        "334": "Geteilter Dienst",
+        "570": "Entgeltumwandlung PensFlex",
+        "635": "Gehaltsumwandlung Dienstrad",
+        "636": "Geldwerter Vorteil Dienstrad",
+    }
+    if code in known:
+        return known[code]
+    return None
+
+
 def _extract_label(tail: str, amounts_raw: list[str]) -> str:
     first_pos = tail.find(amounts_raw[0])
     last_raw = amounts_raw[-1]
@@ -158,6 +185,7 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
         label = _extract_label(tail, amounts_raw)
         category, surcharge_percent = classify_surcharge(label)
         wage_item_type = classify_quantity_wage_item(code, label)
+        gross_component_type = classify_gross_component(code, label)
 
         quantity = None
         unit_or_basis = None
@@ -204,6 +232,7 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
             "values": amounts,
             "category": category,
             "wage_item_type": wage_item_type,
+            "gross_component_type": gross_component_type,
             "surcharge_percent": surcharge_percent,
             "tax_free_percent": surcharge_percent,
         }
@@ -211,8 +240,84 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
     return items[:80]
 
 
+def _find_amount_subset(items: list[dict[str, Any]], target: float, tolerance: float = 0.02) -> list[int]:
+    """Find the smallest subset whose current amounts reconcile a target difference."""
+    candidates = [
+        (idx, float(item.get("current_amount") or 0))
+        for idx, item in enumerate(items)
+        if 0 < float(item.get("current_amount") or 0) <= 500
+    ]
+    for size in range(1, min(6, len(candidates)) + 1):
+        for combo in itertools.combinations(candidates, size):
+            if abs(money(sum(value for _, value in combo)) - money(target)) <= tolerance:
+                return [idx for idx, _ in combo]
+    return []
+
+
+def build_gross_composition(
+    salary_items: list[dict[str, Any]],
+    gross: float | None,
+    tax_gross: float | None,
+    sv_gross: float | None,
+    zvs_sv_addition: float | None,
+) -> dict[str, Any]:
+    components = [
+        dict(item)
+        for item in salary_items
+        if item.get("gross_component_type") and item.get("current_amount") is not None
+    ]
+    reconstructed_gross = money(sum(float(item.get("current_amount") or 0) for item in components))
+    gross_difference = money((gross or 0) - reconstructed_gross) if gross is not None else None
+
+    tax_delta = money((gross or 0) - (tax_gross or 0)) if gross is not None and tax_gross is not None else None
+    inferred_indexes: list[int] = []
+    if tax_delta is not None and tax_delta > 0:
+        inferred_indexes = _find_amount_subset(components, tax_delta)
+
+    inferred_tax_excluded = []
+    for idx, item in enumerate(components):
+        excluded = idx in inferred_indexes
+        item["tax_effect"] = "aus Steuerbrutto herausgerechnet (hergeleitet)" if excluded else "im Steuerbrutto enthalten (hergeleitet)"
+        item["tax_excluded_inferred"] = excluded
+        if excluded:
+            inferred_tax_excluded.append({
+                "code": item.get("code"),
+                "label": item.get("label"),
+                "amount": item.get("current_amount"),
+            })
+
+    reconstructed_tax_gross = None
+    tax_difference = None
+    if gross is not None and tax_delta is not None and inferred_indexes:
+        reconstructed_tax_gross = money(gross - sum(float(components[i].get("current_amount") or 0) for i in inferred_indexes))
+        tax_difference = money((tax_gross or 0) - reconstructed_tax_gross) if tax_gross is not None else None
+
+    reconstructed_sv_gross = None
+    sv_difference = None
+    if tax_gross is not None and zvs_sv_addition is not None:
+        reconstructed_sv_gross = money(tax_gross + zvs_sv_addition)
+        sv_difference = money((sv_gross or 0) - reconstructed_sv_gross) if sv_gross is not None else None
+
+    return {
+        "components": components,
+        "reconstructed_gross": reconstructed_gross,
+        "gross_difference": gross_difference,
+        "tax_delta": tax_delta,
+        "inferred_tax_excluded": inferred_tax_excluded,
+        "reconstructed_tax_gross": reconstructed_tax_gross,
+        "tax_difference": tax_difference,
+        "zvs_sv_addition": zvs_sv_addition,
+        "reconstructed_sv_gross": reconstructed_sv_gross,
+        "sv_difference": sv_difference,
+        "inference_note": (
+            "Die Zuordnung von Einzelpositionen zur Differenz zwischen Gesamt- und Steuerbrutto wird aus den Beträgen der konkreten Abrechnung hergeleitet. "
+            "Sie ist keine allgemeine steuerrechtliche Klassifizierung dieser Lohnart."
+        ),
+    }
+
+
 def parse_payroll_text(text: str) -> dict[str, Any]:
-    global LAST_TAX_CONTEXT, LAST_PAYROLL_DETAILS, LAST_SURCHARGE_ITEMS, LAST_WAGE_ITEMS
+    global LAST_TAX_CONTEXT, LAST_PAYROLL_DETAILS, LAST_SURCHARGE_ITEMS, LAST_WAGE_ITEMS, LAST_GROSS_COMPOSITION
     LAST_TAX_CONTEXT = tax_context(text)
 
     gross = amount_for_code(text, "BRG")
@@ -236,6 +341,7 @@ def parse_payroll_text(text: str) -> dict[str, Any]:
     supplementary = amount_for_code(text, "ZVA")
     gwv = amount_for_code(text, "GWS")
     payout_correction = amount_for_code(text, "AZR")
+    zvs_sv_addition = amount_for_code(text, "ZVS")
 
     payout_deductions = money(abs(min(supplementary or 0, 0)) + abs(min(gwv or 0, 0)))
     payout_additions = money(max(payout_correction or 0, 0))
@@ -259,6 +365,7 @@ def parse_payroll_text(text: str) -> dict[str, Any]:
     salary_items = parse_salary_items(text)
     LAST_SURCHARGE_ITEMS = [i for i in salary_items if i.get("category")]
     LAST_WAGE_ITEMS = [i for i in salary_items if i.get("wage_item_type") and not i.get("category")]
+    LAST_GROSS_COMPOSITION = build_gross_composition(salary_items, gross, tax_gross, sv_gross, zvs_sv_addition)
     LAST_PAYROLL_DETAILS = {
         "kv_gross": kv_gross,
         "rv_gross": rv_gross,
@@ -271,6 +378,7 @@ def parse_payroll_text(text: str) -> dict[str, Any]:
         "supplementary_pension": supplementary,
         "gwv_deduction": gwv,
         "payout_correction": payout_correction,
+        "zvs_sv_addition": zvs_sv_addition,
     }
 
     detected = sum(1 for value in fields.values() if value not in (None, "", 0.0))
@@ -279,6 +387,7 @@ def parse_payroll_text(text: str) -> dict[str, Any]:
         "salary_items": salary_items,
         "surcharge_items": LAST_SURCHARGE_ITEMS,
         "wage_items": LAST_WAGE_ITEMS,
+        "gross_composition": LAST_GROSS_COMPOSITION,
         "tax_context": LAST_TAX_CONTEXT.copy(),
         "details": LAST_PAYROLL_DETAILS.copy(),
         "detected_fields": detected,
