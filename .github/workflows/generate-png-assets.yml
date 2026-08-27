@@ -1,0 +1,42 @@
+name: Generate PNG assets
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'assets/icon.svg'
+      - 'assets/favicon.svg'
+      - '.github/workflows/generate-png-assets.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SVG renderer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+
+      - name: Generate PNG assets
+        run: |
+          rsvg-convert -w 512 -h 512 assets/icon.svg -o assets/icon.png
+          rsvg-convert -w 64 -h 64 assets/favicon.svg -o assets/favicon.png
+          file assets/icon.png assets/favicon.png
+
+      - name: Commit generated PNGs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/icon.png assets/favicon.png
+          if git diff --cached --quiet; then
+            echo "PNG assets already up to date."
+            exit 0
+          fi
+          git commit -m "Generate PNG app icon and favicon"
+          git push
