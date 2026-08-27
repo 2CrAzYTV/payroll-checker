@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uvicorn
+from fastapi.responses import FileResponse
 
 from app import main, payroll_parser
 from app.bmf_tax import calculate_bmf_2026
@@ -266,6 +267,12 @@ def perform_check_with_bmf(data):
 
     result["version"] = "0.6.0"
     return result
+
+
+@main.app.get("/favicon.ico", include_in_schema=False)
+@main.app.get("/favicon.png", include_in_schema=False)
+def favicon():
+    return FileResponse("/app/assets/favicon.png", media_type="image/png")
 
 
 main.perform_check = perform_check_with_bmf
