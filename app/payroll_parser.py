@@ -12,6 +12,7 @@ LAST_TAX_CONTEXT: dict[str, Any] = {
 }
 LAST_PAYROLL_DETAILS: dict[str, Any] = {}
 LAST_SURCHARGE_ITEMS: list[dict[str, Any]] = []
+LAST_WAGE_ITEMS: list[dict[str, Any]] = []
 
 
 def money(value: float) -> float:
@@ -104,15 +105,17 @@ def classify_surcharge(label: str) -> tuple[str | None, float | None]:
     return None, stated_percent
 
 
-def _extract_label(tail: str, amounts_raw: list[str]) -> str:
-    """Find the human label regardless of PDF text-column order.
+def classify_quantity_wage_item(code: str, label: str) -> str | None:
+    value = label.lower()
+    known_codes = {"331", "332", "334"}
+    if code in known_codes or any(x in value for x in (
+        "geteilter dienst", "mankogeld", "stück", "stueck", "stk", "pauschale pro",
+    )):
+        return "Mengenlohnart"
+    return None
 
-    Depending on the PDF extractor a row can arrive as either
-      Nachtzuschlag ... 2,00 20,60 10,30 172,75
-    or
-      2,00 20,60 10,30 172,75 Nachtzuschlag ...
-    We examine both sides and prefer the side that classifies as a surcharge.
-    """
+
+def _extract_label(tail: str, amounts_raw: list[str]) -> str:
     first_pos = tail.find(amounts_raw[0])
     last_raw = amounts_raw[-1]
     last_pos = tail.rfind(last_raw)
@@ -126,7 +129,6 @@ def _extract_label(tail: str, amounts_raw: list[str]) -> str:
     if after_cat:
         return after
 
-    # Prefer a side with meaningful alphabetic content. Ignore a bare unit token.
     def useful(value: str) -> bool:
         cleaned = re.sub(r"\b(?:Std\.?|Tage?)\b", "", value, flags=re.IGNORECASE).strip(" ()")
         return bool(re.search(r"[A-Za-zÄÖÜäöüß]{3,}", cleaned))
@@ -139,7 +141,7 @@ def _extract_label(tail: str, amounts_raw: list[str]) -> str:
 
 
 def parse_salary_items(text: str) -> list[dict[str, Any]]:
-    """Parse LA rows while preserving quantity, unit value, month amount and annual value."""
+    """Parse LA rows preserving quantity, unit value, month amount and annual value."""
     items: list[dict[str, Any]] = []
     for raw_line in text.splitlines():
         match = re.match(r"^\s*(\d{3})\s+(.+)$", raw_line)
@@ -155,6 +157,7 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
 
         label = _extract_label(tail, amounts_raw)
         category, surcharge_percent = classify_surcharge(label)
+        wage_item_type = classify_quantity_wage_item(code, label)
 
         quantity = None
         unit_or_basis = None
@@ -178,8 +181,14 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
             current_amount = amounts[0]
 
         calculated_amount = None
-        if quantity is not None and unit_or_basis is not None and surcharge_percent is not None:
-            calculated_amount = money(quantity * unit_or_basis * surcharge_percent / 100.0)
+        calculation_kind = None
+        if quantity is not None and unit_or_basis is not None:
+            if category and surcharge_percent is not None:
+                calculated_amount = money(quantity * unit_or_basis * surcharge_percent / 100.0)
+                calculation_kind = "percentage"
+            elif wage_item_type:
+                calculated_amount = money(quantity * unit_or_basis)
+                calculation_kind = "quantity_x_unit"
 
         item = {
             "code": code,
@@ -191,8 +200,10 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
             "unit_or_basis": unit_or_basis,
             "rate_or_basis": unit_or_basis,
             "calculated_amount": calculated_amount,
+            "calculation_kind": calculation_kind,
             "values": amounts,
             "category": category,
+            "wage_item_type": wage_item_type,
             "surcharge_percent": surcharge_percent,
             "tax_free_percent": surcharge_percent,
         }
@@ -201,7 +212,7 @@ def parse_salary_items(text: str) -> list[dict[str, Any]]:
 
 
 def parse_payroll_text(text: str) -> dict[str, Any]:
-    global LAST_TAX_CONTEXT, LAST_PAYROLL_DETAILS, LAST_SURCHARGE_ITEMS
+    global LAST_TAX_CONTEXT, LAST_PAYROLL_DETAILS, LAST_SURCHARGE_ITEMS, LAST_WAGE_ITEMS
     LAST_TAX_CONTEXT = tax_context(text)
 
     gross = amount_for_code(text, "BRG")
@@ -247,6 +258,7 @@ def parse_payroll_text(text: str) -> dict[str, Any]:
 
     salary_items = parse_salary_items(text)
     LAST_SURCHARGE_ITEMS = [i for i in salary_items if i.get("category")]
+    LAST_WAGE_ITEMS = [i for i in salary_items if i.get("wage_item_type") and not i.get("category")]
     LAST_PAYROLL_DETAILS = {
         "kv_gross": kv_gross,
         "rv_gross": rv_gross,
@@ -266,6 +278,7 @@ def parse_payroll_text(text: str) -> dict[str, Any]:
         "fields": fields,
         "salary_items": salary_items,
         "surcharge_items": LAST_SURCHARGE_ITEMS,
+        "wage_items": LAST_WAGE_ITEMS,
         "tax_context": LAST_TAX_CONTEXT.copy(),
         "details": LAST_PAYROLL_DETAILS.copy(),
         "detected_fields": detected,
