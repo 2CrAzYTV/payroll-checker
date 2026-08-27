@@ -39,6 +39,8 @@
     .notice { background:#0d1728; border:1px solid var(--line); border-radius:12px; padding:13px; color:var(--muted); font-size:13px; line-height:1.5; }
     .spacer { height:18px; }
     .upload-result { margin-top:12px; white-space:pre-wrap; word-break:break-word; }
+    .detected { margin-top:12px; display:grid; gap:8px; }
+    .detected-item { display:flex; justify-content:space-between; gap:14px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:#0d1728; }
     footer { margin-top:22px; color:var(--muted); font-size:12px; text-align:center; }
     code { color:#dce8ff; }
     @media (max-width:850px) { .grid { grid-template-columns:1fr; } .fields { grid-template-columns:1fr; } .full,.section-title { grid-column:auto; } .row { grid-template-columns:1fr 1fr; } header { flex-direction:column; } }
@@ -56,7 +58,7 @@
 
   <div class="grid">
     <div class="card">
-      <h2>Abrechnung manuell prüfen</h2>
+      <h2>Abrechnung prüfen</h2>
       <form id="checkForm">
         <div class="fields">
           <label class="full">Abrechnungsmonat
@@ -64,8 +66,10 @@
           </label>
           <div class="section-title">Grundwerte</div>
           <label>Gesamtbrutto (€)<input id="gross" type="number" step="0.01" value="0" required></label>
+          <label>Steuerbrutto (€)<input id="tax_gross" type="number" step="0.01" placeholder="optional"></label>
           <label>SV-Brutto (€)<input id="sv_gross" type="number" step="0.01" placeholder="leer = Gesamtbrutto"></label>
-          <label>Netto laut Abrechnung (€)<input id="stated_net" type="number" step="0.01" value="0" required></label>
+          <label>Gesetzliches Netto (€)<input id="stated_net" type="number" step="0.01" value="0" required></label>
+          <label>Auszahlungsbetrag (€)<input id="stated_payout" type="number" step="0.01" placeholder="optional"></label>
           <label>Sonstige Netto-Zuschläge (€)<input id="other_net_additions" type="number" step="0.01" value="0"></label>
 
           <div class="section-title">Steuern / Abzüge</div>
@@ -77,12 +81,16 @@
           <div class="section-title">Arbeitnehmeranteile Sozialversicherung</div>
           <label>Rentenversicherung (€)<input id="pension_employee" type="number" step="0.01" value="0"></label>
           <label>Arbeitslosenversicherung (€)<input id="unemployment_employee" type="number" step="0.01" value="0"></label>
-          <label>Krankenversicherung (€)<input id="health_employee" type="number" step="0.01" value="0"></label>
-          <label>Pflegeversicherung (€)<input id="care_employee" type="number" step="0.01" value="0"></label>
+          <label>Krankenversicherung gesamt AN (€)<input id="health_employee" type="number" step="0.01" value="0"></label>
+          <label>Pflegeversicherung gesamt AN (€)<input id="care_employee" type="number" step="0.01" value="0"></label>
+
+          <div class="section-title">Auszahlungskette</div>
+          <label>Abzüge nach gesetzlichem Netto (€)<input id="payout_deductions" type="number" step="0.01" value="0"></label>
+          <label>Zuschläge/Korrekturen nach Netto (€)<input id="payout_additions" type="number" step="0.01" value="0"></label>
 
           <div class="section-title">Prüfparameter 2026</div>
-          <label>KV-Zusatzbeitrag gesamt (%)<input id="health_additional_rate" type="number" step="0.01" value="2.9"></label>
-          <label>PV Arbeitnehmeranteil (%)<input id="care_employee_rate" type="number" step="0.01" value="1.8"></label>
+          <label>KV-Zusatzbeitrag gesamt (%)<input id="health_additional_rate" type="number" step="0.0001" value="2.9"></label>
+          <label>PV Arbeitnehmeranteil (%)<input id="care_employee_rate" type="number" step="0.0001" value="1.8"></label>
           <label>Toleranz (€)<input id="tolerance" type="number" step="0.01" value="0.05"></label>
         </div>
         <button class="primary" type="submit">Abrechnung prüfen</button>
@@ -99,19 +107,20 @@
       <div class="spacer"></div>
 
       <div class="card">
-        <h2>PDF lokal einlesen</h2>
+        <h2>PDF automatisch einlesen</h2>
         <div class="upload">
           <input id="pdfFile" type="file" accept="application/pdf,.pdf">
-          <button class="secondary" id="uploadBtn" type="button">PDF hochladen</button>
+          <button class="secondary" id="uploadBtn" type="button">PDF analysieren</button>
         </div>
         <div id="uploadResult" class="upload-result notice" style="display:none"></div>
+        <div id="detectedFields" class="detected"></div>
       </div>
 
       <div class="spacer"></div>
 
       <div class="card">
         <h2>Aktueller Umfang</h2>
-        <div class="notice">Diese erste Version prüft die Netto-Rechenkette sowie ausgewählte Arbeitnehmeranteile der Sozialversicherung mit den 2026er Beitragsbemessungsgrenzen. Lohnsteuerberechnung nach BMF-PAP, Schichtzuschläge, Pflege-Kinderabschläge, Sachsen-Sonderregelung und automatische PDF-Feldzuordnung folgen in den nächsten Versionen.</div>
+        <div class="notice">v0.2 erkennt zentrale Felder aus textbasierten deutschen Lohnabrechnungen automatisch, trennt gesetzliches Netto und Auszahlung und prüft die Sozialversicherungsbeiträge sowie die Auszahlungskette. Die vollständige Lohnsteuerberechnung nach BMF-PAP und komplexe tarifliche Sonderfälle folgen weiter schrittweise.</div>
       </div>
     </div>
   </div>
@@ -122,18 +131,50 @@
 <script>
 const money = v => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(Number(v||0));
 const num = id => Number(document.getElementById(id).value || 0);
+const optionalNum = id => {
+  const raw = document.getElementById(id).value.trim();
+  return raw === '' ? null : Number(raw);
+};
+
+function setField(id, value) {
+  if (value === null || value === undefined || value === '') return;
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+
+function autoFill(fields) {
+  Object.entries(fields || {}).forEach(([key,value]) => setField(key,value));
+}
+
+function renderDetected(data) {
+  const box = document.getElementById('detectedFields');
+  const labels = {
+    payroll_month:'Abrechnungsmonat', gross:'Gesamtbrutto', tax_gross:'Steuerbrutto', sv_gross:'SV-Brutto',
+    stated_net:'Gesetzliches Netto', stated_payout:'Auszahlungsbetrag', wage_tax:'Lohnsteuer',
+    pension_employee:'Rentenversicherung', unemployment_employee:'Arbeitslosenversicherung',
+    health_employee:'Krankenversicherung AN gesamt', care_employee:'Pflegeversicherung AN gesamt',
+    payout_deductions:'Abzüge nach Netto', payout_additions:'Zuschläge/Korrekturen nach Netto',
+    health_additional_rate:'ermittelter KV-Zusatzbeitrag gesamt', care_employee_rate:'ermittelter PV-Anteil'
+  };
+  const percentFields = new Set(['health_additional_rate','care_employee_rate']);
+  const rows = Object.entries(data || {}).filter(([k,v]) => labels[k] && v !== null && v !== '' && v !== 0).map(([k,v]) => {
+    const shown = k === 'payroll_month' ? v : percentFields.has(k) ? `${Number(v).toFixed(4)} %` : money(v);
+    return `<div class="detected-item"><span>${labels[k]}</span><strong>${shown}</strong></div>`;
+  });
+  box.innerHTML = rows.length ? `<div class="section-title" style="margin-top:4px">Automatisch erkannt</div>${rows.join('')}` : '';
+}
 
 document.getElementById('checkForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const svRaw = document.getElementById('sv_gross').value.trim();
   const payload = {
     payroll_month: document.getElementById('payroll_month').value.trim(),
-    gross: num('gross'), sv_gross: svRaw === '' ? null : Number(svRaw), stated_net: num('stated_net'),
+    gross: num('gross'), tax_gross: optionalNum('tax_gross'), sv_gross: optionalNum('sv_gross'),
+    stated_net: num('stated_net'), stated_payout: optionalNum('stated_payout'),
     wage_tax: num('wage_tax'), solidarity_surcharge: num('solidarity_surcharge'), church_tax: num('church_tax'),
     pension_employee: num('pension_employee'), unemployment_employee: num('unemployment_employee'),
     health_employee: num('health_employee'), care_employee: num('care_employee'), other_deductions: num('other_deductions'),
-    other_net_additions: num('other_net_additions'), health_additional_rate: num('health_additional_rate'),
-    care_employee_rate: num('care_employee_rate'), tolerance: num('tolerance')
+    other_net_additions: num('other_net_additions'), payout_deductions: num('payout_deductions'), payout_additions: num('payout_additions'),
+    health_additional_rate: num('health_additional_rate'), care_employee_rate: num('care_employee_rate'), tolerance: num('tolerance')
   };
 
   const r = await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -142,15 +183,16 @@ document.getElementById('checkForm').addEventListener('submit', async (e) => {
   document.getElementById('emptyResult').style.display='none';
   const el = document.getElementById('result'); el.style.display='block';
   const icon = data.overall === 'ok' ? '✅' : data.overall === 'warning' ? '🟡' : '❌';
-  let rows = data.comparisons.map(x => `
+  const rows = data.comparisons.map(x => `
     <div class="row">
       <div><strong>${x.name}</strong><small>${x.message}</small></div>
       <div><small>Abrechnung</small>${money(x.stated)}</div>
       <div><small>Berechnet</small>${money(x.expected)}</div>
       <div class="state ${x.level}"><small>Differenz</small>${money(x.difference)}</div>
     </div>`).join('');
+  const payoutInfo = data.calculated_payout !== null ? `<small>Auszahlung berechnet: ${money(data.calculated_payout)}</small>` : '';
   el.innerHTML = `
-    <div class="result-head ${data.overall}"><div class="state">${icon} ${data.overall_text}</div><small>Netto berechnet: ${money(data.calculated_net)} · Differenz: ${money(data.net_difference)}</small></div>
+    <div class="result-head ${data.overall}"><div class="state">${icon} ${data.overall_text}</div>${payoutInfo}</div>
     ${rows}
     <div class="notice" style="margin-top:14px">${data.notice}</div>`;
 });
@@ -159,11 +201,13 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
   const input = document.getElementById('pdfFile');
   if (!input.files.length) { alert('Bitte zuerst eine PDF auswählen.'); return; }
   const form = new FormData(); form.append('file', input.files[0]);
-  const box = document.getElementById('uploadResult'); box.style.display='block'; box.textContent='Upload läuft…';
+  const box = document.getElementById('uploadResult'); box.style.display='block'; box.textContent='PDF wird lokal analysiert…';
   const r = await fetch('/api/upload',{method:'POST',body:form});
   const data = await r.json();
   if (!r.ok) { box.textContent = data.detail || 'Upload fehlgeschlagen.'; return; }
-  box.textContent = `${data.message}\n\nDatei: ${data.original_name}\nErkannte Zeichen: ${data.extracted_chars}` + (data.text_sample ? `\n\nTextvorschau:\n${data.text_sample}` : '');
+  autoFill(data.parsed?.fields || {});
+  renderDetected(data.parsed?.fields || {});
+  box.textContent = `${data.message}\nDie erkannten Werte wurden in die Prüffelder übernommen. Bitte vor der Prüfung kurz kontrollieren.\n\nDatei: ${data.original_name}\nErkannte Zeichen: ${data.extracted_chars}`;
 });
 </script>
 </body>
